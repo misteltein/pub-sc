@@ -1,0 +1,1337 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>fk-shipping-confirmation scanner</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --scan-primary-font-size: clamp(2.2rem, 9.6vw, 3.2rem);
+        --scan-primary-line-height: 1.25;
+      }
+
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        margin: 0;
+        padding: 20px 16px 28px;
+        background: #fff;
+        color: #111;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        min-height: 100vh;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      .topbar,
+      .auth-form,
+      .code-line,
+      .history,
+      .error-box {
+        width: 100%;
+        max-width: 640px;
+      }
+
+      .video-wrap,
+      .scanbar {
+        width: 100%;
+        max-width: 960px;
+      }
+
+      .btn {
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        padding: 12px 16px;
+        background: #2563eb;
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      #scanStart {
+        width: 80vw;
+        max-width: 80vw;
+        font-size: var(--scan-primary-font-size);
+        line-height: var(--scan-primary-line-height);
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .sub-btn {
+        appearance: none;
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        padding: 10px 14px;
+        background: #fff;
+        color: #334155;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .sub-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .auth-form {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        background: #f8fafc;
+      }
+
+      .auth-label {
+        font-size: 1rem;
+        line-height: 1.5;
+        font-weight: 700;
+        color: #334155;
+      }
+
+      .auth-input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 14px 16px;
+        border: 1px solid #94a3b8;
+        border-radius: 12px;
+        font-size: 1rem;
+      }
+
+      .auth-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .video-wrap {
+        --scan-live-zoom: 1.6;
+        position: relative;
+        display: none;
+        overflow: hidden;
+        border-radius: 12px;
+        aspect-ratio: 4/3;
+        background: #000;
+        touch-action: none;
+        user-select: none;
+      }
+
+      .video-wrap.show {
+        display: block;
+      }
+
+      .video-wrap video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        background: #000;
+        transform: scale(var(--scan-live-zoom));
+        transform-origin: center center;
+      }
+
+      .overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border: 3px dashed rgba(255, 255, 255, 0.7);
+        border-radius: 12px;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35) inset;
+        z-index: 2;
+      }
+
+      .scanbar {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .scanbar.show {
+        display: flex;
+      }
+
+      .zoom-controls {
+        flex: 1 1 260px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .zoom-label,
+      .zoom-value {
+        font-size: 0.9rem;
+        color: #374151;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .zoom-value {
+        min-width: 3.8em;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .zoom-slider {
+        flex: 1 1 auto;
+        width: 100%;
+        min-width: 120px;
+      }
+
+      .scan-stop {
+        background: #64748b;
+        color: #fff;
+      }
+
+      .code-line {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .code-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .code-heading {
+        flex: 1 1 100%;
+        font-size: clamp(2.8rem, 13vw, 5.2rem);
+        line-height: 1.05;
+        font-weight: 900;
+        margin: 0;
+        word-break: break-word;
+      }
+
+      .history {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .history li {
+        border: 1px solid var(--history-border, #e5e7eb);
+        border-left: 8px solid var(--history-accent, #94a3b8);
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: var(--history-bg, #f8fafc);
+      }
+
+      .history-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: #64748b;
+        font-size: 0.85rem;
+        margin-bottom: 6px;
+      }
+
+      .history-body {
+        color: #0f172a;
+        font-size: clamp(1.8rem, 8vw, 3rem);
+        font-weight: 700;
+        line-height: 1.15;
+        word-break: break-word;
+      }
+
+      .history li[data-kind="error"] {
+        border-color: #fecaca;
+        border-left-color: #dc2626;
+        background: #fff1f2;
+      }
+
+      .history li[data-kind="saving"] {
+        border-color: #fde68a;
+        border-left-color: #f59e0b;
+        background: #fffbeb;
+      }
+
+      .history li[data-kind="queued"] {
+        border-color: #bfdbfe;
+        border-left-color: #2563eb;
+        background: #eff6ff;
+      }
+
+      .history li[data-kind="skipped"] {
+        border-color: #cbd5e1;
+        border-left-color: #64748b;
+        background: #f8fafc;
+      }
+
+      .error-box {
+        margin: 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid #fecaca;
+        background: #fff1f2;
+        color: #b91c1c;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        white-space: pre-wrap;
+      }
+
+      @media (min-width: 720px) {
+        .video-wrap {
+          aspect-ratio: 16/9;
+        }
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.js"></script>
+  </head>
+  <body>
+    <form id="authForm" class="auth-form" hidden>
+      <label class="auth-label" for="deploymentIdInput">
+        GAS デプロイ ID
+      </label>
+      <input
+        id="deploymentIdInput"
+        class="auth-input"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="AKfycb..."
+      />
+      <label class="auth-label" for="passphraseInput">
+        passphrase を入力
+      </label>
+      <input
+        id="passphraseInput"
+        class="auth-input"
+        type="password"
+        autocomplete="current-password"
+        spellcheck="false"
+      />
+      <div class="auth-actions">
+        <button type="submit" class="btn">保存</button>
+      </div>
+    </form>
+
+    <div class="topbar">
+      <button id="scanStart" class="btn">バーコードを読み込む</button>
+      <button id="settingsReset" type="button" class="sub-btn" hidden>
+        設定変更
+      </button>
+    </div>
+
+    <input
+      id="scanFileInput"
+      type="file"
+      accept="image/*"
+      capture="environment"
+      hidden
+    />
+
+    <div id="videoWrap" class="video-wrap">
+      <video id="scanVideo" playsinline muted></video>
+      <div class="overlay"></div>
+    </div>
+
+    <div id="scanBar" class="scanbar">
+      <label class="zoom-controls" for="scanZoomRange">
+        <span class="zoom-label">ズーム</span>
+        <input
+          id="scanZoomRange"
+          class="zoom-slider"
+          type="range"
+          min="1"
+          max="1.8"
+          step="0.01"
+          value="1.6"
+        />
+        <span id="scanZoomValue" class="zoom-value">1.60x</span>
+      </label>
+      <button id="scanStop" type="button" class="btn scan-stop" disabled>
+        中止
+      </button>
+    </div>
+
+    <div class="code-line" id="codeLine" hidden>
+      <h2 id="codeHeading" class="code-heading"></h2>
+      <div class="code-actions">
+        <button id="historyClear" type="button" class="sub-btn">
+          履歴クリア
+        </button>
+      </div>
+    </div>
+
+    <ul class="history" id="history"></ul>
+    <p class="error-box" id="errorBox" hidden></p>
+
+    <script>
+      const DEPLOYMENT_ID_STORAGE_KEY = "fk-shipping-confirmation.deploymentId";
+      const LEGACY_API_URL_STORAGE_KEY = "fk-shipping-confirmation.apiUrl";
+      const PASSPHRASE_STORAGE_KEY = "fk-shipping-confirmation.passphrase";
+
+      const $authForm = document.getElementById("authForm");
+      const $deploymentIdInput = document.getElementById("deploymentIdInput");
+      const $passphraseInput = document.getElementById("passphraseInput");
+      const $scanStart = document.getElementById("scanStart");
+      const $settingsReset = document.getElementById("settingsReset");
+      const $scanFileInput = document.getElementById("scanFileInput");
+      const $videoWrap = document.getElementById("videoWrap");
+      const $scanVideo = document.getElementById("scanVideo");
+      const $scanBar = document.getElementById("scanBar");
+      const $scanStop = document.getElementById("scanStop");
+      const $scanZoomRange = document.getElementById("scanZoomRange");
+      const $scanZoomValue = document.getElementById("scanZoomValue");
+      const $codeLine = document.getElementById("codeLine");
+      const $codeHeading = document.getElementById("codeHeading");
+      const $historyClear = document.getElementById("historyClear");
+      const $history = document.getElementById("history");
+      const $errorBox = document.getElementById("errorBox");
+
+      let currentStream = null;
+      let running = false;
+      let liveScanTimerId = null;
+      let liveScanSessionId = 0;
+      let liveScanCandidateCode = "";
+      let liveScanCandidateCount = 0;
+      let liveScanCandidateLastAt = 0;
+      let liveScanCodeLastSeenAt = 0;
+      let liveScanViewZoom = 1.6;
+      let lastAcceptedOid = "";
+      let activeSavingOid = "";
+      let scanQueue = [];
+      let scanQueueProcessing = false;
+      let audioContext = null;
+      let deploymentId = "";
+      let passphrase = "";
+
+      const LIVE_SCAN_CONFIRM_INTERVAL_MS = 100;
+      const LIVE_SCAN_CONFIRM_COUNT = 2;
+      const LIVE_SCAN_CONFIRM_TIMEOUT_MS = 1200;
+      const LIVE_SCAN_FRAME_MAX_EDGE_PX = 960;
+      const FILE_SCAN_FRAME_MAX_EDGE_PX = 1280;
+      const BARCODE_SCAN_JPEG_QUALITY = 0.92;
+      const LIVE_SCAN_VIEW_ZOOM_MIN = 1;
+      const LIVE_SCAN_VIEW_ZOOM_MAX = 1.8;
+      const LIVE_SCAN_VIEW_ZOOM_STEP = 0.01;
+      const SAVE_MAX_ATTEMPTS = 3;
+      const SAVE_RETRY_DELAY_MS = 1000;
+      const HISTORY_KIND_LABELS = {
+        queued: "WAITING",
+        saving: "SAVING",
+        saved: "SAVED",
+        skipped: "SKIPPED",
+        error: "ERROR",
+      };
+      const HISTORY_COLOR_PALETTE = [
+        { bg: "#eff6ff", border: "#bfdbfe", accent: "#2563eb" },
+        { bg: "#f0fdf4", border: "#bbf7d0", accent: "#16a34a" },
+        { bg: "#fdf2f8", border: "#fbcfe8", accent: "#db2777" },
+        { bg: "#ecfeff", border: "#a5f3fc", accent: "#0891b2" },
+        { bg: "#f5f3ff", border: "#ddd6fe", accent: "#7c3aed" },
+        { bg: "#fff7ed", border: "#fed7aa", accent: "#ea580c" },
+        { bg: "#f0fdfa", border: "#99f6e4", accent: "#0d9488" },
+        { bg: "#f7fee7", border: "#d9f99d", accent: "#65a30d" },
+      ];
+
+      let historyColorDeck = [];
+
+      function show(el, on) {
+        el.classList.toggle("show", !!on);
+      }
+
+      function setHidden(el, on) {
+        el.hidden = !!on;
+      }
+
+      function clearError() {
+        $errorBox.textContent = "";
+        setHidden($errorBox, true);
+      }
+
+      function showError(message) {
+        $errorBox.textContent = message;
+        setHidden($errorBox, false);
+      }
+
+      function setScanStatus(_message) {
+        // Status text is intentionally kept out of the UI; history rows show progress.
+      }
+
+      function wait(ms) {
+        return new Promise((resolve) => window.setTimeout(resolve, ms));
+      }
+
+      function getNextHistoryColor() {
+        if (!historyColorDeck.length) {
+          historyColorDeck = [...HISTORY_COLOR_PALETTE];
+          for (let i = historyColorDeck.length - 1; i > 0; i -= 1) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [historyColorDeck[i], historyColorDeck[j]] = [
+              historyColorDeck[j],
+              historyColorDeck[i],
+            ];
+          }
+        }
+        return historyColorDeck.pop();
+      }
+
+      function applyHistoryColor(item) {
+        const color = getNextHistoryColor();
+        item.style.setProperty("--history-bg", color.bg);
+        item.style.setProperty("--history-border", color.border);
+        item.style.setProperty("--history-accent", color.accent);
+        item.dataset.hasHistoryColor = "true";
+      }
+
+      function ensureHistoryColor(item, kind) {
+        if (kind === "saving" || kind === "queued" || kind === "error") return;
+        if (item.dataset.hasHistoryColor === "true") return;
+        applyHistoryColor(item);
+      }
+
+      function normalizeDeploymentId(value) {
+        const text = String(value || "").trim();
+        const match = text.match(/\/macros\/s\/([^/]+)\/exec(?:\?|$)/);
+        return match ? match[1] : text;
+      }
+
+      function buildApiUrl() {
+        return `https://script.google.com/macros/s/${encodeURIComponent(deploymentId)}/exec`;
+      }
+
+      function loadSettings() {
+        deploymentId = normalizeDeploymentId(
+          localStorage.getItem(DEPLOYMENT_ID_STORAGE_KEY) ||
+            localStorage.getItem(LEGACY_API_URL_STORAGE_KEY),
+        );
+        passphrase = String(localStorage.getItem(PASSPHRASE_STORAGE_KEY) || "").trim();
+      }
+
+      function openAuthForm() {
+        stopLiveScan();
+        setHidden($authForm, false);
+        setHidden($settingsReset, true);
+        $deploymentIdInput.value = deploymentId;
+        $passphraseInput.value = passphrase;
+        setTimeout(() => {
+          (deploymentId ? $passphraseInput : $deploymentIdInput).focus();
+        }, 0);
+      }
+
+      function closeAuthForm() {
+        setHidden($authForm, true);
+        setHidden($settingsReset, false);
+      }
+
+      function saveSettings(nextDeploymentId, nextPassphrase) {
+        deploymentId = normalizeDeploymentId(nextDeploymentId);
+        passphrase = String(nextPassphrase || "").trim();
+        localStorage.setItem(DEPLOYMENT_ID_STORAGE_KEY, deploymentId);
+        localStorage.removeItem(LEGACY_API_URL_STORAGE_KEY);
+        localStorage.setItem(PASSPHRASE_STORAGE_KEY, passphrase);
+      }
+
+      function setScanningUi(scanning) {
+        $scanStart.disabled = scanning;
+        $scanStop.disabled = !scanning;
+        $settingsReset.disabled = scanning;
+      }
+
+      function clampLiveScanZoom(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) return liveScanViewZoom;
+        return Math.min(
+          LIVE_SCAN_VIEW_ZOOM_MAX,
+          Math.max(LIVE_SCAN_VIEW_ZOOM_MIN, numericValue),
+        );
+      }
+
+      function formatLiveScanZoom(value) {
+        return `${clampLiveScanZoom(value).toFixed(2)}x`;
+      }
+
+      function syncLiveScanZoomUi() {
+        const zoomValue = clampLiveScanZoom(liveScanViewZoom);
+        liveScanViewZoom = zoomValue;
+        $videoWrap.style.setProperty("--scan-live-zoom", String(zoomValue));
+        $scanZoomRange.value = zoomValue.toFixed(2);
+        $scanZoomValue.textContent = formatLiveScanZoom(zoomValue);
+      }
+
+      function setLiveScanZoom(value) {
+        const nextZoom = clampLiveScanZoom(value);
+        if (Math.abs(nextZoom - liveScanViewZoom) < LIVE_SCAN_VIEW_ZOOM_STEP / 2) {
+          syncLiveScanZoomUi();
+          return;
+        }
+        liveScanViewZoom = nextZoom;
+        syncLiveScanZoomUi();
+      }
+
+      function normalizeDisplayCode(code) {
+        return String(code || "")
+          .replace(/[！-～]/g, (s) =>
+            String.fromCharCode(s.charCodeAt(0) - 0xfee0),
+          )
+          .replace(/[‐‑‒–—―ー−]/g, "-")
+          .replace(/　/g, " ")
+          .trim()
+          .replace(/[^0-9-]/g, "");
+      }
+
+      function resetLiveScanConfirmation() {
+        liveScanCandidateCode = "";
+        liveScanCandidateCount = 0;
+        liveScanCandidateLastAt = 0;
+      }
+
+      function resetLiveScanState() {
+        resetLiveScanConfirmation();
+        liveScanCodeLastSeenAt = 0;
+      }
+
+      function setLiveScanReadyStatus() {
+        setScanStatus("バーコードを枠内に合わせてください");
+        resetLiveScanState();
+        setCurrentOid("");
+      }
+
+      function getLiveScanTargetAspectRatio() {
+        const rect = $videoWrap.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          return rect.width / rect.height;
+        }
+        return 4 / 3;
+      }
+
+      function getBarcodeSourceSize(source) {
+        return {
+          width: source.videoWidth || source.naturalWidth || source.width || 0,
+          height: source.videoHeight || source.naturalHeight || source.height || 0,
+        };
+      }
+
+      function scaleSizeToMaxEdge(width, height, maxEdgePx) {
+        if (!width || !height) {
+          return { width: 0, height: 0 };
+        }
+        const scale = Math.min(1, maxEdgePx / Math.max(width, height));
+        return {
+          width: Math.max(1, Math.round(width * scale)),
+          height: Math.max(1, Math.round(height * scale)),
+        };
+      }
+
+      function renderBarcodeSourceToCanvas(
+        source,
+        canvas,
+        ctx,
+        maxEdgePx,
+        targetAspectRatio = null,
+        zoomScale = 1,
+      ) {
+        const { width, height } = getBarcodeSourceSize(source);
+        if (!width || !height) return false;
+
+        let sourceX = 0;
+        let sourceY = 0;
+        let sourceWidth = width;
+        let sourceHeight = height;
+
+        if (targetAspectRatio && targetAspectRatio > 0) {
+          const sourceAspectRatio = width / height;
+          if (sourceAspectRatio > targetAspectRatio) {
+            sourceWidth = height * targetAspectRatio;
+            sourceX = (width - sourceWidth) / 2;
+          } else if (sourceAspectRatio < targetAspectRatio) {
+            sourceHeight = width / targetAspectRatio;
+            sourceY = (height - sourceHeight) / 2;
+          }
+        }
+
+        if (zoomScale > 1) {
+          const zoomedWidth = sourceWidth / zoomScale;
+          const zoomedHeight = sourceHeight / zoomScale;
+          sourceX += (sourceWidth - zoomedWidth) / 2;
+          sourceY += (sourceHeight - zoomedHeight) / 2;
+          sourceWidth = zoomedWidth;
+          sourceHeight = zoomedHeight;
+        }
+
+        const scaled = scaleSizeToMaxEdge(sourceWidth, sourceHeight, maxEdgePx);
+        if (!scaled.width || !scaled.height) return false;
+
+        if (canvas.width !== scaled.width || canvas.height !== scaled.height) {
+          canvas.width = scaled.width;
+          canvas.height = scaled.height;
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        ctx.drawImage(
+          source,
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+        );
+        return true;
+      }
+
+      function scheduleLiveScanTick(fn, delay = 0) {
+        if (liveScanTimerId) {
+          clearTimeout(liveScanTimerId);
+        }
+        liveScanTimerId = window.setTimeout(() => {
+          liveScanTimerId = null;
+          void fn();
+        }, delay);
+      }
+
+      function clearStaleLiveScanCandidate(now = performance.now()) {
+        if (!liveScanCandidateCode) return;
+        if (now - liveScanCandidateLastAt <= LIVE_SCAN_CONFIRM_TIMEOUT_MS) return;
+        setLiveScanReadyStatus();
+      }
+
+      function clearMissingLiveCode(now = performance.now()) {
+        if (!liveScanCodeLastSeenAt) return;
+        if (now - liveScanCodeLastSeenAt <= LIVE_SCAN_CONFIRM_TIMEOUT_MS) return;
+        setLiveScanReadyStatus();
+      }
+
+      function confirmLiveScanCode(code, now = performance.now()) {
+        const normalized = normalizeDisplayCode(code);
+        if (!normalized) return "";
+        if (normalized === lastAcceptedOid || isProcessingOrQueued(normalized)) {
+          liveScanCodeLastSeenAt = now;
+          setCurrentOid("");
+          return "";
+        }
+        liveScanCodeLastSeenAt = now;
+        setCurrentOid(normalized);
+
+        const isExpired =
+          liveScanCandidateCode &&
+          now - liveScanCandidateLastAt > LIVE_SCAN_CONFIRM_TIMEOUT_MS;
+        if (normalized !== liveScanCandidateCode || isExpired) {
+          liveScanCandidateCode = normalized;
+          liveScanCandidateCount = 1;
+          liveScanCandidateLastAt = now;
+          setScanStatus(
+            `同じ結果を確認中… ${liveScanCandidateCount}/${LIVE_SCAN_CONFIRM_COUNT}`,
+          );
+          return "";
+        }
+
+        if (now - liveScanCandidateLastAt < LIVE_SCAN_CONFIRM_INTERVAL_MS) {
+          return "";
+        }
+
+        liveScanCandidateCount += 1;
+        liveScanCandidateLastAt = now;
+        if (liveScanCandidateCount >= LIVE_SCAN_CONFIRM_COUNT) {
+          return normalized;
+        }
+
+        setScanStatus(
+          `同じ結果を確認中… ${liveScanCandidateCount}/${LIVE_SCAN_CONFIRM_COUNT}`,
+        );
+        return "";
+      }
+
+      async function startCamera() {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          return false;
+        }
+        stopCamera();
+        currentStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+        $scanVideo.srcObject = currentStream;
+        await $scanVideo.play();
+        return true;
+      }
+
+      function stopCamera() {
+        if (liveScanTimerId) {
+          clearTimeout(liveScanTimerId);
+          liveScanTimerId = null;
+        }
+        if (currentStream) {
+          currentStream.getTracks().forEach((track) => track.stop());
+          currentStream = null;
+        }
+        if ($scanVideo.srcObject) {
+          $scanVideo.srcObject = null;
+        }
+      }
+
+      function addHistory(kind, message) {
+        const item = document.createElement("li");
+        item.dataset.kind = kind;
+        ensureHistoryColor(item, kind);
+
+        const meta = document.createElement("div");
+        meta.className = "history-meta";
+
+        const kindLabel = document.createElement("span");
+        kindLabel.className = "history-kind";
+        kindLabel.textContent = HISTORY_KIND_LABELS[kind] || kind.toUpperCase();
+
+        const timeLabel = document.createElement("span");
+        timeLabel.textContent = new Date().toLocaleTimeString("ja-JP");
+        meta.append(kindLabel, timeLabel);
+
+        const body = document.createElement("div");
+        body.className = "history-body";
+        body.textContent = message;
+
+        item.append(meta, body);
+        $history.prepend(item);
+        return item;
+      }
+
+      function updateHistoryItem(item, kind, message) {
+        if (!item) return;
+        item.dataset.kind = kind;
+        ensureHistoryColor(item, kind);
+        const kindLabel = item.querySelector(".history-kind");
+        const body = item.querySelector(".history-body");
+        if (kindLabel) {
+          kindLabel.textContent = HISTORY_KIND_LABELS[kind] || kind.toUpperCase();
+        }
+        if (body) {
+          body.textContent = message;
+        }
+      }
+
+      function setCurrentOid(oid) {
+        if (!oid) {
+          $codeHeading.textContent = "WAITING";
+          setHidden($codeLine, false);
+          return;
+        }
+        $codeHeading.textContent = oid;
+        setHidden($codeLine, false);
+      }
+
+      async function ensureAudioReady() {
+        if (!audioContext) {
+          const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextCtor) return;
+          audioContext = new AudioContextCtor();
+        }
+        if (audioContext.state === "suspended") {
+          await audioContext.resume();
+        }
+      }
+
+      async function playBeep() {
+        if (!audioContext) return;
+
+        const now = audioContext.currentTime;
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(1046.5, now);
+        gainNode.gain.setValueAtTime(0.0001, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.18, now + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        oscillator.start(now);
+        oscillator.stop(now + 0.14);
+      }
+
+      async function callApi(action, params = {}) {
+        if (!deploymentId) {
+          throw new Error("GAS デプロイ ID が未設定です。");
+        }
+        if (!passphrase) {
+          throw new Error("passphrase が未設定です。");
+        }
+
+        const payload = new URLSearchParams({
+          action,
+          passphrase,
+          ...params,
+        });
+
+        const response = await fetch(`${buildApiUrl()}?${payload.toString()}`, {
+          method: "GET",
+          redirect: "follow",
+        });
+
+        const text = await response.text();
+        return JSON.parse(text);
+      }
+
+      function getQueueSuffix() {
+        return scanQueue.length ? `（待ち ${scanQueue.length} 件）` : "";
+      }
+
+      function hasQueuedOid(oid) {
+        return scanQueue.some((item) => item.oid === oid);
+      }
+
+      function isProcessingOrQueued(oid) {
+        return oid === activeSavingOid || hasQueuedOid(oid);
+      }
+
+      function onCodeDetected(code) {
+        const oid = normalizeDisplayCode(code);
+        if (!oid) {
+          return;
+        }
+
+        if (oid === lastAcceptedOid || isProcessingOrQueued(oid)) {
+          return;
+        }
+
+        setCurrentOid(oid);
+        clearError();
+        const startsImmediately = !scanQueueProcessing && !activeSavingOid;
+        const queueItem = {
+          oid,
+          historyItem: addHistory(startsImmediately ? "saving" : "queued", oid),
+        };
+        scanQueue.push(queueItem);
+        setCurrentOid("");
+
+        if (startsImmediately) {
+          setScanStatus(`登録しています… ${oid}`);
+        } else {
+          setScanStatus(`キューに追加しました: ${oid}${getQueueSuffix()}`);
+        }
+
+        void processScanQueue();
+      }
+
+      async function processScanQueue() {
+        if (scanQueueProcessing) return;
+        scanQueueProcessing = true;
+        try {
+          while (scanQueue.length) {
+            const item = scanQueue.shift();
+            await saveQueuedOid(item);
+          }
+        } finally {
+          scanQueueProcessing = false;
+          activeSavingOid = "";
+        }
+      }
+
+      async function saveQueuedOid(item) {
+        const { oid, historyItem } = item;
+        activeSavingOid = oid;
+        clearError();
+
+        try {
+          let lastError = null;
+          for (let attempt = 1; attempt <= SAVE_MAX_ATTEMPTS; attempt += 1) {
+            updateHistoryItem(historyItem, "saving", oid);
+            setScanStatus(`登録しています… ${oid}${getQueueSuffix()}`);
+
+            try {
+              const response = await callApi("scan", { oid });
+              if (!response.ok) {
+                throw new Error(response.message || "API error");
+              }
+
+              if (response.skipped) {
+                lastAcceptedOid = oid;
+                setScanStatus(`サーバー側で重複スキップしました: ${oid}`);
+                updateHistoryItem(historyItem, "skipped", oid);
+                return;
+              }
+
+              if (response.saved !== true) {
+                throw new Error(
+                  `unexpected scan response: ${JSON.stringify(response).slice(0, 200)}`,
+                );
+              }
+
+              lastAcceptedOid = oid;
+              await playBeep();
+              setScanStatus(`登録しました: ${oid}`);
+              updateHistoryItem(historyItem, "saved", oid);
+              return;
+            } catch (error) {
+              lastError = error;
+              if (attempt >= SAVE_MAX_ATTEMPTS) {
+                break;
+              }
+              setScanStatus(
+                `登録に失敗しました。再試行します… ${oid}`,
+              );
+              updateHistoryItem(historyItem, "saving", oid);
+              await wait(SAVE_RETRY_DELAY_MS);
+            }
+          }
+
+          throw lastError || new Error("API error");
+        } catch (error) {
+          showError(error.message || String(error));
+          setScanStatus(`登録に失敗しました: ${oid}`);
+          if (historyItem) {
+            updateHistoryItem(historyItem, "error", oid);
+          } else {
+            addHistory("error", oid);
+          }
+        } finally {
+          activeSavingOid = "";
+        }
+      }
+
+      async function startScanCode() {
+        clearError();
+        setScanningUi(true);
+        setCurrentOid("");
+        setScanStatus("カメラを起動しています…");
+        resetLiveScanState();
+
+        try {
+          await ensureAudioReady();
+          const cameraReady = await startCamera();
+          if (!cameraReady) {
+            throw new Error("camera start failed");
+          }
+          running = true;
+          show($videoWrap, true);
+          show($scanBar, true);
+          await startLiveScan();
+        } catch (error) {
+          console.error(error);
+          stopLiveScan();
+          setScanningUi(false);
+          showError(
+            "ライブスキャンを開始できませんでした。画像選択での読み取りに切り替えます。",
+          );
+          openScanFilePicker();
+        }
+      }
+
+      function openScanFilePicker() {
+        $scanFileInput.value = "";
+        $scanFileInput.click();
+      }
+
+      function stopLiveScan() {
+        running = false;
+        activeSavingOid = "";
+        scanQueue = [];
+        scanQueueProcessing = false;
+        liveScanSessionId += 1;
+        resetLiveScanState();
+        stopCamera();
+        show($videoWrap, false);
+        show($scanBar, false);
+        setScanningUi(false);
+        setCurrentOid("");
+        setScanStatus("停止しました");
+      }
+
+      async function supportsBarcodeDetectorCode39() {
+        if (!("BarcodeDetector" in window)) {
+          return false;
+        }
+        if (typeof window.BarcodeDetector.getSupportedFormats !== "function") {
+          return true;
+        }
+        const formats = await window.BarcodeDetector.getSupportedFormats();
+        return Array.isArray(formats) && formats.includes("code_39");
+      }
+
+      async function startLiveScan() {
+        const sessionId = ++liveScanSessionId;
+        if (await supportsBarcodeDetectorCode39()) {
+          await runBarcodeDetectorLiveScan(sessionId);
+          return;
+        }
+        await runQuaggaLiveScan(sessionId);
+      }
+
+      async function runBarcodeDetectorLiveScan(sessionId) {
+        let detector = null;
+        try {
+          detector = new window.BarcodeDetector({ formats: ["code_39"] });
+        } catch (error) {
+          console.error(error);
+          await runQuaggaLiveScan(sessionId);
+          return;
+        }
+
+        const canvas = document.createElement("canvas");
+        const ctx =
+          canvas.getContext("2d", { willReadFrequently: true }) ||
+          canvas.getContext("2d");
+        if (!ctx) {
+          throw new Error("canvas context unavailable");
+        }
+
+        setScanStatus("バーコードを枠内に合わせてください");
+        const tick = async () => {
+          if (!running) return;
+          if (sessionId !== liveScanSessionId) return;
+
+          clearStaleLiveScanCandidate();
+          clearMissingLiveCode();
+          if (
+            renderBarcodeSourceToCanvas(
+              $scanVideo,
+              canvas,
+              ctx,
+              LIVE_SCAN_FRAME_MAX_EDGE_PX,
+              getLiveScanTargetAspectRatio(),
+              liveScanViewZoom,
+            )
+          ) {
+            try {
+              const codes = await detector.detect(canvas);
+              const code = codes?.[0]?.rawValue || "";
+              if (code) {
+                const confirmedCode = confirmLiveScanCode(code);
+                if (confirmedCode) {
+                  resetLiveScanConfirmation();
+                  onCodeDetected(confirmedCode);
+                }
+              } else {
+                setLiveScanReadyStatus();
+              }
+            } catch (error) {
+              console.error(error);
+            }
+          }
+
+          if (!running) return;
+          if (sessionId !== liveScanSessionId) return;
+          scheduleLiveScanTick(tick, LIVE_SCAN_CONFIRM_INTERVAL_MS);
+        };
+
+        scheduleLiveScanTick(tick);
+      }
+
+      async function runQuaggaLiveScan(sessionId) {
+        if (typeof Quagga === "undefined" || !Quagga.decodeSingle) {
+          throw new Error("Quagga unavailable");
+        }
+
+        const canvas = document.createElement("canvas");
+        const ctx =
+          canvas.getContext("2d", { willReadFrequently: true }) ||
+          canvas.getContext("2d");
+        if (!ctx) {
+          throw new Error("canvas context unavailable");
+        }
+
+        setScanStatus("バーコードを枠内に合わせてください");
+        const tick = async () => {
+          if (!running) return;
+          if (sessionId !== liveScanSessionId) return;
+
+          clearStaleLiveScanCandidate();
+          clearMissingLiveCode();
+          if (
+            renderBarcodeSourceToCanvas(
+              $scanVideo,
+              canvas,
+              ctx,
+              LIVE_SCAN_FRAME_MAX_EDGE_PX,
+              getLiveScanTargetAspectRatio(),
+              liveScanViewZoom,
+            )
+          ) {
+            try {
+              const code = await detectCodeByQuaggaCanvas(canvas);
+              if (code) {
+                const confirmedCode = confirmLiveScanCode(code);
+                if (confirmedCode) {
+                  resetLiveScanConfirmation();
+                  onCodeDetected(confirmedCode);
+                }
+              } else {
+                setLiveScanReadyStatus();
+              }
+            } catch (error) {
+              console.error(error);
+            }
+          }
+
+          if (!running) return;
+          if (sessionId !== liveScanSessionId) return;
+          scheduleLiveScanTick(tick, LIVE_SCAN_CONFIRM_INTERVAL_MS);
+        };
+
+        scheduleLiveScanTick(tick);
+      }
+
+      async function detectCodeByQuaggaCanvas(canvas) {
+        const src = canvas.toDataURL("image/jpeg", BARCODE_SCAN_JPEG_QUALITY);
+        return await detectCodeByQuaggaSrc(src);
+      }
+
+      async function detectCodeByQuaggaSrc(src) {
+        if (typeof Quagga === "undefined" || !Quagga.decodeSingle) {
+          return "";
+        }
+        return await new Promise((resolve) => {
+          Quagga.decodeSingle(
+            {
+              src,
+              numOfWorkers: 0,
+              inputStream: { size: 1280 },
+              decoder: {
+                readers: ["code_39_reader"],
+              },
+              locate: true,
+            },
+            (res) => resolve(res?.codeResult?.code || ""),
+          );
+        });
+      }
+
+      async function detectCodeByQuagga(file) {
+        const imageUrl = URL.createObjectURL(file);
+        try {
+          const image = await loadImageElement(imageUrl);
+          const canvas = document.createElement("canvas");
+          const ctx =
+            canvas.getContext("2d", { willReadFrequently: true }) ||
+            canvas.getContext("2d");
+          if (!ctx) {
+            throw new Error("canvas context unavailable");
+          }
+          const rendered = renderBarcodeSourceToCanvas(
+            image,
+            canvas,
+            ctx,
+            FILE_SCAN_FRAME_MAX_EDGE_PX,
+          );
+          if (!rendered) {
+            return "";
+          }
+          return await detectCodeByQuaggaCanvas(canvas);
+        } finally {
+          URL.revokeObjectURL(imageUrl);
+        }
+      }
+
+      function loadImageElement(src) {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error("image load failed"));
+          img.src = src;
+        });
+      }
+
+      $scanStart.addEventListener("click", () => {
+        void startScanCode();
+      });
+
+      $authForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const nextDeploymentId = normalizeDeploymentId($deploymentIdInput.value);
+        const nextPassphrase = String($passphraseInput.value || "").trim();
+        if (!nextDeploymentId) {
+          showError("GAS デプロイ ID を入力してください。");
+          $deploymentIdInput.focus();
+          return;
+        }
+        if (!nextPassphrase) {
+          showError("passphrase を入力してください。");
+          $passphraseInput.focus();
+          return;
+        }
+        clearError();
+        saveSettings(nextDeploymentId, nextPassphrase);
+        closeAuthForm();
+      });
+
+      $settingsReset.addEventListener("click", () => {
+        deploymentId = "";
+        passphrase = "";
+        localStorage.removeItem(DEPLOYMENT_ID_STORAGE_KEY);
+        localStorage.removeItem(LEGACY_API_URL_STORAGE_KEY);
+        localStorage.removeItem(PASSPHRASE_STORAGE_KEY);
+        openAuthForm();
+      });
+
+      $scanStop.addEventListener("click", () => {
+        stopLiveScan();
+      });
+
+      $scanZoomRange.addEventListener("input", (event) => {
+        setLiveScanZoom(event.target.value);
+      });
+
+      $historyClear.addEventListener("click", () => {
+        $history.innerHTML = "";
+      });
+
+      $scanFileInput.addEventListener("change", async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        clearError();
+        try {
+          const code = await detectCodeByQuagga(file);
+          if (!code) {
+            showError("バーコードを検出できませんでした。");
+            return;
+          }
+          onCodeDetected(code);
+        } catch (error) {
+          showError(error.message || String(error));
+        }
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          stopLiveScan();
+        }
+      });
+
+      loadSettings();
+      syncLiveScanZoomUi();
+      setScanningUi(false);
+      setCurrentOid("");
+      if (deploymentId && passphrase) {
+        closeAuthForm();
+      } else {
+        openAuthForm();
+      }
+    </script>
+  </body>
+</html>
