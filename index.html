@@ -453,6 +453,14 @@
       const CONFIG_QR_CONFIRM_TIMEOUT_MS = 1500;
       const CONFIG_QR_SEPARATOR = ";";
       const LOCATION_NAMES = Object.freeze(["玉川", "緑ヶ丘", "中目黒", "豊橋", "京都", "自由が丘"]);
+      const LOCATION_CODES = Object.freeze({
+        TM: "玉川",
+        M: "緑ヶ丘",
+        NM: "中目黒",
+        TY: "豊橋",
+        KY: "京都",
+        JY: "自由が丘",
+      });
       const SAVE_BATCH_START_DELAY_MS = 1000;
       const SAVE_MAX_ATTEMPTS = 3;
       const SAVE_RETRY_DELAY_MS = 1000;
@@ -540,6 +548,9 @@
 
       function normalizeLocationName(value) {
         const normalized = String(value || "").trim();
+        if (LOCATION_CODES[normalized]) {
+          return LOCATION_CODES[normalized];
+        }
         return LOCATION_NAMES.includes(normalized) ? normalized : "";
       }
 
