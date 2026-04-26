@@ -3,12 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>fk-shipping-confirmation scanner</title>
+    <title>出荷管理スキャナ</title>
     <style>
       :root {
         color-scheme: light;
         --scan-primary-font-size: clamp(2.2rem, 9.6vw, 3.2rem);
         --scan-primary-line-height: 1.25;
+        --history-display-font-size: clamp(2.8rem, 13vw, 5.2rem);
+        --history-time-font-size: 2.64rem;
       }
 
       body {
@@ -92,6 +94,12 @@
         font-weight: 700;
         cursor: pointer;
         white-space: nowrap;
+      }
+
+      #settingsReset {
+        font-size: 2rem;
+        line-height: 1.1;
+        padding: 14px 22px;
       }
 
       .sub-btn:disabled {
@@ -243,7 +251,7 @@
 
       .code-heading {
         flex: 1 1 100%;
-        font-size: clamp(2.8rem, 13vw, 5.2rem);
+        font-size: var(--history-display-font-size);
         line-height: 1.05;
         font-weight: 900;
         margin: 0;
@@ -269,43 +277,43 @@
       }
 
       .history-meta {
-        position: absolute;
-        top: 12px;
-        right: 14px;
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
         color: #64748b;
       }
 
       .history-time {
         display: block;
-        font-size: 0.88rem;
+        font-size: var(--history-time-font-size);
         font-weight: 600;
         line-height: 1;
+        font-variant-numeric: tabular-nums;
       }
 
       .history-main {
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: 16px;
         min-width: 0;
-        padding-right: 5.6rem;
       }
 
       .history-icon {
         flex: 0 0 auto;
-        width: 2.3rem;
-        height: 2.3rem;
+        width: 1em;
+        height: 1em;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         box-sizing: border-box;
-        font-size: 1.95rem;
+        font-size: var(--history-display-font-size);
         font-weight: 900;
         line-height: 1;
       }
 
       .history-icon[data-kind="saving"],
       .history-icon[data-kind="queued"] {
-        border: 0.26rem solid rgba(148, 163, 184, 0.28);
+        border: 0.12em solid rgba(148, 163, 184, 0.28);
         border-top-color: currentColor;
         border-radius: 50%;
         animation: history-spin 0.8s linear infinite;
@@ -314,16 +322,10 @@
       .history-body {
         color: #0f172a;
         min-width: 0;
-        font-size: clamp(2.1rem, 8.8vw, 3.45rem);
+        font-size: var(--history-display-font-size);
         font-weight: 800;
         line-height: 1.1;
         word-break: break-word;
-      }
-
-      @media (max-width: 420px) {
-        .history-main {
-          padding-right: 5rem;
-        }
       }
 
       .history-icon[data-kind="saved"]::before,
@@ -1027,7 +1029,7 @@
         body.textContent = message;
 
         main.append(icon, body);
-        item.append(meta, main);
+        item.append(main, meta);
         $history.prepend(item);
         return item;
       }
