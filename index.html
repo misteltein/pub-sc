@@ -1093,6 +1093,7 @@
           historyItem: addHistory(startsImmediately ? "saving" : "queued", oid),
         };
         scanQueue.push(queueItem);
+        void playBeep();
 
         if (startsImmediately) {
           setScanStatus(`登録しています… ${oid}`);
@@ -1148,7 +1149,6 @@
               }
 
               lastAcceptedOid = oid;
-              await playBeep();
               setScanStatus(`登録しました: ${oid}`);
               updateHistoryItem(historyItem, "saved", oid);
               return;
