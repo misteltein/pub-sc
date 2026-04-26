@@ -10,7 +10,6 @@
         --scan-primary-font-size: clamp(2.2rem, 9.6vw, 3.2rem);
         --scan-primary-line-height: 1.25;
         --history-display-font-size: clamp(2.8rem, 13vw, 5.2rem);
-        --history-time-font-size: 2.64rem;
       }
 
       body {
@@ -212,14 +211,15 @@
 
       .zoom-label,
       .zoom-value {
-        font-size: 0.9rem;
+        font-size: 2rem;
+        line-height: 1.1;
         color: #374151;
-        font-weight: 600;
+        font-weight: 700;
         white-space: nowrap;
       }
 
       .zoom-value {
-        min-width: 3.8em;
+        min-width: 4.2em;
         text-align: right;
         font-variant-numeric: tabular-nums;
       }
@@ -230,23 +230,8 @@
         min-width: 120px;
       }
 
-      .scan-stop {
-        background: #64748b;
-        color: #fff;
-      }
-
       .code-line {
-        display: flex;
-        align-items: flex-end;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 12px;
-      }
-
-      .code-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
+        display: block;
       }
 
       .code-heading {
@@ -274,21 +259,6 @@
         border-radius: 12px;
         padding: 12px 14px;
         background: var(--history-bg, #f8fafc);
-      }
-
-      .history-meta {
-        display: flex;
-        justify-content: flex-end;
-        margin-top: 10px;
-        color: #64748b;
-      }
-
-      .history-time {
-        display: block;
-        font-size: var(--history-time-font-size);
-        font-weight: 600;
-        line-height: 1;
-        font-variant-numeric: tabular-nums;
       }
 
       .history-main {
@@ -475,18 +445,10 @@
         />
         <span id="scanZoomValue" class="zoom-value">1.00x</span>
       </label>
-      <button id="scanStop" type="button" class="btn scan-stop" disabled>
-        中止
-      </button>
     </div>
 
     <div class="code-line" id="codeLine" hidden>
       <h2 id="codeHeading" class="code-heading"></h2>
-      <div class="code-actions">
-        <button id="historyClear" type="button" class="sub-btn">
-          履歴クリア
-        </button>
-      </div>
     </div>
 
     <ul class="history" id="history"></ul>
@@ -508,12 +470,10 @@
       const $videoWrap = document.getElementById("videoWrap");
       const $scanVideo = document.getElementById("scanVideo");
       const $scanBar = document.getElementById("scanBar");
-      const $scanStop = document.getElementById("scanStop");
       const $scanZoomRange = document.getElementById("scanZoomRange");
       const $scanZoomValue = document.getElementById("scanZoomValue");
       const $codeLine = document.getElementById("codeLine");
       const $codeHeading = document.getElementById("codeHeading");
-      const $historyClear = document.getElementById("historyClear");
       const $history = document.getElementById("history");
       const $errorBox = document.getElementById("errorBox");
 
@@ -685,7 +645,6 @@
 
       function setScanningUi(scanning) {
         $scanStart.disabled = scanning;
-        $scanStop.disabled = !scanning;
         $settingsReset.disabled = scanning;
       }
 
@@ -1008,14 +967,6 @@
         item.dataset.kind = kind;
         ensureHistoryColor(item, kind);
 
-        const meta = document.createElement("div");
-        meta.className = "history-meta";
-
-        const timeLabel = document.createElement("span");
-        timeLabel.className = "history-time";
-        timeLabel.textContent = new Date().toLocaleTimeString("ja-JP");
-        meta.append(timeLabel);
-
         const main = document.createElement("div");
         main.className = "history-main";
 
@@ -1029,7 +980,7 @@
         body.textContent = message;
 
         main.append(icon, body);
-        item.append(main, meta);
+        item.append(main);
         $history.prepend(item);
         return item;
       }
@@ -1595,16 +1546,8 @@
         void startConfigQrSetup();
       });
 
-      $scanStop.addEventListener("click", () => {
-        stopLiveScan();
-      });
-
       $scanZoomRange.addEventListener("input", (event) => {
         setLiveScanZoom(event.target.value);
-      });
-
-      $historyClear.addEventListener("click", () => {
-        $history.innerHTML = "";
       });
 
       $scanFileInput.addEventListener("change", async (event) => {
