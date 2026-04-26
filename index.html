@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
     <title>出荷管理スキャナ</title>
     <style>
       :root {
@@ -37,7 +38,6 @@
 
       .setup-heading,
       .topbar,
-      .auth-form,
       .code-line,
       .history,
       .error-box {
@@ -112,38 +112,6 @@
         font-size: clamp(2rem, 9vw, 3.4rem);
         line-height: 1.1;
         font-weight: 900;
-      }
-
-      .auth-form {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        padding: 14px;
-        border: 1px solid #cbd5e1;
-        border-radius: 12px;
-        background: #f8fafc;
-      }
-
-      .auth-label {
-        font-size: 1rem;
-        line-height: 1.5;
-        font-weight: 700;
-        color: #334155;
-      }
-
-      .auth-input {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 14px 16px;
-        border: 1px solid #94a3b8;
-        border-radius: 12px;
-        font-size: 1rem;
-      }
-
-      .auth-actions {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
       }
 
       .video-wrap {
@@ -382,39 +350,12 @@
     <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.js"></script>
   </head>
   <body>
-    <h1 id="setupHeading" class="setup-heading" hidden>QRでログイン</h1>
-
-    <form id="authForm" class="auth-form" hidden>
-      <label class="auth-label" for="deploymentIdInput">
-        GAS デプロイ ID
-      </label>
-      <input
-        id="deploymentIdInput"
-        class="auth-input"
-        type="text"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder="AKfycb..."
-      />
-      <label class="auth-label" for="passphraseInput">
-        passphrase を入力
-      </label>
-      <input
-        id="passphraseInput"
-        class="auth-input"
-        type="password"
-        autocomplete="current-password"
-        spellcheck="false"
-      />
-      <div class="auth-actions">
-        <button type="submit" class="btn">保存</button>
-      </div>
-    </form>
+    <h1 id="setupHeading" class="setup-heading" hidden>設定QRを読み取る</h1>
 
     <div id="topbar" class="topbar">
       <button id="scanStart" class="btn">バーコードを読み込む</button>
       <button id="settingsReset" type="button" class="sub-btn" hidden>
-        設定変更
+        設定QRを読み直す
       </button>
     </div>
 
@@ -458,11 +399,9 @@
       const DEPLOYMENT_ID_STORAGE_KEY = "fk-shipping-confirmation.deploymentId";
       const LEGACY_API_URL_STORAGE_KEY = "fk-shipping-confirmation.apiUrl";
       const PASSPHRASE_STORAGE_KEY = "fk-shipping-confirmation.passphrase";
+      const LOCATION_NAME_STORAGE_KEY = "fk-shipping-confirmation.locationName";
 
       const $setupHeading = document.getElementById("setupHeading");
-      const $authForm = document.getElementById("authForm");
-      const $deploymentIdInput = document.getElementById("deploymentIdInput");
-      const $passphraseInput = document.getElementById("passphraseInput");
       const $topbar = document.getElementById("topbar");
       const $scanStart = document.getElementById("scanStart");
       const $settingsReset = document.getElementById("settingsReset");
@@ -498,6 +437,7 @@
       let audioContext = null;
       let deploymentId = "";
       let passphrase = "";
+      let locationName = "";
 
       const LIVE_SCAN_CONFIRM_INTERVAL_MS = 100;
       const LIVE_SCAN_CONFIRM_COUNT = 3;
@@ -512,6 +452,7 @@
       const CONFIG_QR_CONFIRM_COUNT = 2;
       const CONFIG_QR_CONFIRM_TIMEOUT_MS = 1500;
       const CONFIG_QR_SEPARATOR = ";";
+      const LOCATION_NAMES = Object.freeze(["玉川", "緑ヶ丘", "中目黒", "豊橋", "京都", "自由が丘"]);
       const SAVE_BATCH_START_DELAY_MS = 1000;
       const SAVE_MAX_ATTEMPTS = 3;
       const SAVE_RETRY_DELAY_MS = 1000;
@@ -547,7 +488,7 @@
       }
 
       function hasSavedSettings() {
-        return !!(deploymentId && passphrase);
+        return !!(deploymentId && passphrase && locationName);
       }
 
       function setScanStatus(_message) {
@@ -597,6 +538,11 @@
         return match ? match[1] : text;
       }
 
+      function normalizeLocationName(value) {
+        const normalized = String(value || "").trim();
+        return LOCATION_NAMES.includes(normalized) ? normalized : "";
+      }
+
       function buildApiUrl() {
         return `https://script.google.com/macros/s/${encodeURIComponent(deploymentId)}/exec`;
       }
@@ -607,41 +553,25 @@
             localStorage.getItem(LEGACY_API_URL_STORAGE_KEY),
         );
         passphrase = String(localStorage.getItem(PASSPHRASE_STORAGE_KEY) || "").trim();
+        locationName = normalizeLocationName(
+          localStorage.getItem(LOCATION_NAME_STORAGE_KEY),
+        );
       }
 
-      function openAuthForm({ focus = true } = {}) {
-        stopLiveScan();
-        setHidden($setupHeading, true);
-        setHidden($topbar, false);
-        setHidden($authForm, false);
-        setHidden($settingsReset, true);
-        $deploymentIdInput.value = deploymentId;
-        $passphraseInput.value = passphrase;
-        if (focus) {
-          setTimeout(() => {
-            (deploymentId ? $passphraseInput : $deploymentIdInput).focus();
-          }, 0);
-        }
-      }
-
-      function closeAuthForm() {
-        setHidden($authForm, true);
-        syncSettingsUi();
-      }
-
-      function saveSettings(nextDeploymentId, nextPassphrase) {
+      function saveSettings(nextDeploymentId, nextPassphrase, nextLocationName) {
         deploymentId = normalizeDeploymentId(nextDeploymentId);
         passphrase = String(nextPassphrase || "").trim();
+        locationName = normalizeLocationName(nextLocationName);
         localStorage.setItem(DEPLOYMENT_ID_STORAGE_KEY, deploymentId);
         localStorage.removeItem(LEGACY_API_URL_STORAGE_KEY);
         localStorage.setItem(PASSPHRASE_STORAGE_KEY, passphrase);
+        localStorage.setItem(LOCATION_NAME_STORAGE_KEY, locationName);
       }
 
       function syncSettingsUi() {
         const needsQrLogin = !hasSavedSettings();
         setHidden($setupHeading, !needsQrLogin);
         setHidden($topbar, needsQrLogin);
-        setHidden($authForm, true);
         setHidden($settingsReset, needsQrLogin);
       }
 
@@ -875,17 +805,14 @@
 
       function parseConfigQrPayload(text) {
         const rawText = String(text || "").trim();
-        const separatorIndex = rawText.indexOf(CONFIG_QR_SEPARATOR);
-        if (separatorIndex <= 0) {
+        const parts = rawText.split(CONFIG_QR_SEPARATOR);
+        if (parts.length !== 3) {
           throw new Error("設定QRの形式が不正です。");
         }
 
-        const nextDeploymentId = normalizeDeploymentId(
-          rawText.slice(0, separatorIndex),
-        );
-        const nextPassphrase = String(
-          rawText.slice(separatorIndex + CONFIG_QR_SEPARATOR.length) || "",
-        ).trim();
+        const nextDeploymentId = normalizeDeploymentId(parts[0]);
+        const nextPassphrase = String(parts[1] || "").trim();
+        const nextLocationName = normalizeLocationName(parts[2]);
 
         if (!nextDeploymentId) {
           throw new Error("設定QRに GAS デプロイ ID が含まれていません。");
@@ -895,9 +822,14 @@
           throw new Error("設定QRに passphrase が含まれていません。");
         }
 
+        if (!nextLocationName) {
+          throw new Error("設定QRに有効な拠点名が含まれていません。");
+        }
+
         return {
           deploymentId: nextDeploymentId,
           passphrase: nextPassphrase,
+          locationName: nextLocationName,
         };
       }
 
@@ -958,10 +890,10 @@
       }
 
       function applyConfigQrSettings(payload) {
-        saveSettings(payload.deploymentId, payload.passphrase);
+        saveSettings(payload.deploymentId, payload.passphrase, payload.locationName);
         clearError();
         stopLiveScan();
-        closeAuthForm();
+        syncSettingsUi();
       }
 
       function addHistory(kind, message) {
@@ -1049,10 +981,14 @@
         if (!passphrase) {
           throw new Error("passphrase が未設定です。");
         }
+        if (!locationName) {
+          throw new Error("拠点名が未設定です。");
+        }
 
         const payload = new URLSearchParams({
           action,
           passphrase,
+          locationName,
           ...params,
         });
 
@@ -1072,10 +1008,14 @@
         if (!passphrase) {
           throw new Error("passphrase が未設定です。");
         }
+        if (!locationName) {
+          throw new Error("拠点名が未設定です。");
+        }
 
         const payload = new URLSearchParams({
           action: "scan_batch",
           passphrase,
+          locationName,
           oids: JSON.stringify(oids),
         });
 
@@ -1580,32 +1520,14 @@
         void startScanCode();
       });
 
-      $authForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        const nextDeploymentId = normalizeDeploymentId($deploymentIdInput.value);
-        const nextPassphrase = String($passphraseInput.value || "").trim();
-        if (!nextDeploymentId) {
-          showError("GAS デプロイ ID を入力してください。");
-          $deploymentIdInput.focus();
-          return;
-        }
-        if (!nextPassphrase) {
-          showError("passphrase を入力してください。");
-          $passphraseInput.focus();
-          return;
-        }
-        clearError();
-        saveSettings(nextDeploymentId, nextPassphrase);
-        stopLiveScan();
-        closeAuthForm();
-      });
-
       $settingsReset.addEventListener("click", () => {
         deploymentId = "";
         passphrase = "";
+        locationName = "";
         localStorage.removeItem(DEPLOYMENT_ID_STORAGE_KEY);
         localStorage.removeItem(LEGACY_API_URL_STORAGE_KEY);
         localStorage.removeItem(PASSPHRASE_STORAGE_KEY);
+        localStorage.removeItem(LOCATION_NAME_STORAGE_KEY);
         syncSettingsUi();
         void startConfigQrSetup();
       });
