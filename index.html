@@ -131,7 +131,7 @@
       }
 
       .video-wrap {
-        --scan-live-zoom: 1.6;
+        --scan-live-zoom: 1;
         position: relative;
         display: none;
         overflow: hidden;
@@ -175,6 +175,14 @@
 
       .scanbar.show {
         display: flex;
+      }
+
+      .scanbar[data-mode="config"] {
+        justify-content: flex-end;
+      }
+
+      .scanbar[data-mode="config"] .zoom-controls {
+        display: none;
       }
 
       .zoom-controls {
@@ -369,9 +377,9 @@
           min="1"
           max="1.8"
           step="0.01"
-          value="1.6"
+          value="1"
         />
-        <span id="scanZoomValue" class="zoom-value">1.60x</span>
+        <span id="scanZoomValue" class="zoom-value">1.00x</span>
       </label>
       <button id="scanStop" type="button" class="btn scan-stop" disabled>
         中止
@@ -417,11 +425,15 @@
       let running = false;
       let liveScanTimerId = null;
       let liveScanSessionId = 0;
+      let currentScanMode = "";
       let liveScanCandidateCode = "";
       let liveScanCandidateCount = 0;
       let liveScanCandidateLastAt = 0;
       let liveScanCodeLastSeenAt = 0;
-      let liveScanViewZoom = 1.6;
+      let configQrCandidateText = "";
+      let configQrCandidateCount = 0;
+      let configQrCandidateLastAt = 0;
+      let liveScanViewZoom = 1;
       let lastAcceptedOid = "";
       let activeSavingOid = "";
       let scanQueue = [];
@@ -431,7 +443,7 @@
       let passphrase = "";
 
       const LIVE_SCAN_CONFIRM_INTERVAL_MS = 100;
-      const LIVE_SCAN_CONFIRM_COUNT = 2;
+      const LIVE_SCAN_CONFIRM_COUNT = 3;
       const LIVE_SCAN_CONFIRM_TIMEOUT_MS = 1200;
       const LIVE_SCAN_FRAME_MAX_EDGE_PX = 960;
       const FILE_SCAN_FRAME_MAX_EDGE_PX = 1280;
@@ -439,6 +451,10 @@
       const LIVE_SCAN_VIEW_ZOOM_MIN = 1;
       const LIVE_SCAN_VIEW_ZOOM_MAX = 1.8;
       const LIVE_SCAN_VIEW_ZOOM_STEP = 0.01;
+      const CONFIG_QR_CONFIRM_INTERVAL_MS = 120;
+      const CONFIG_QR_CONFIRM_COUNT = 2;
+      const CONFIG_QR_CONFIRM_TIMEOUT_MS = 1500;
+      const CONFIG_QR_SEPARATOR = ";";
       const SAVE_MAX_ATTEMPTS = 3;
       const SAVE_RETRY_DELAY_MS = 1000;
       const HISTORY_KIND_LABELS = {
@@ -477,6 +493,10 @@
       function showError(message) {
         $errorBox.textContent = message;
         setHidden($errorBox, false);
+      }
+
+      function hasSavedSettings() {
+        return !!(deploymentId && passphrase);
       }
 
       function setScanStatus(_message) {
@@ -533,15 +553,17 @@
         passphrase = String(localStorage.getItem(PASSPHRASE_STORAGE_KEY) || "").trim();
       }
 
-      function openAuthForm() {
+      function openAuthForm({ focus = true } = {}) {
         stopLiveScan();
         setHidden($authForm, false);
         setHidden($settingsReset, true);
         $deploymentIdInput.value = deploymentId;
         $passphraseInput.value = passphrase;
-        setTimeout(() => {
-          (deploymentId ? $passphraseInput : $deploymentIdInput).focus();
-        }, 0);
+        if (focus) {
+          setTimeout(() => {
+            (deploymentId ? $passphraseInput : $deploymentIdInput).focus();
+          }, 0);
+        }
       }
 
       function closeAuthForm() {
@@ -561,6 +583,14 @@
         $scanStart.disabled = scanning;
         $scanStop.disabled = !scanning;
         $settingsReset.disabled = scanning;
+      }
+
+      function setScanBarMode(mode) {
+        if (!mode) {
+          delete $scanBar.dataset.mode;
+          return;
+        }
+        $scanBar.dataset.mode = mode;
       }
 
       function clampLiveScanZoom(value) {
@@ -616,10 +646,20 @@
         liveScanCodeLastSeenAt = 0;
       }
 
+      function resetConfigQrState() {
+        configQrCandidateText = "";
+        configQrCandidateCount = 0;
+        configQrCandidateLastAt = 0;
+      }
+
       function setLiveScanReadyStatus() {
         setScanStatus("バーコードを枠内に合わせてください");
         resetLiveScanState();
-        setCurrentOid("");
+      }
+
+      function setConfigQrReadyStatus() {
+        setScanStatus("設定QRをカメラに合わせてください");
+        resetConfigQrState();
       }
 
       function getLiveScanTargetAspectRatio() {
@@ -735,11 +775,9 @@
         if (!normalized) return "";
         if (normalized === lastAcceptedOid || isProcessingOrQueued(normalized)) {
           liveScanCodeLastSeenAt = now;
-          setCurrentOid("");
           return "";
         }
         liveScanCodeLastSeenAt = now;
-        setCurrentOid(normalized);
 
         const isExpired =
           liveScanCandidateCode &&
@@ -770,6 +808,62 @@
         return "";
       }
 
+      function parseConfigQrPayload(text) {
+        const rawText = String(text || "").trim();
+        const separatorIndex = rawText.indexOf(CONFIG_QR_SEPARATOR);
+        if (separatorIndex <= 0) {
+          throw new Error("設定QRの形式が不正です。");
+        }
+
+        const nextDeploymentId = normalizeDeploymentId(
+          rawText.slice(0, separatorIndex),
+        );
+        const nextPassphrase = String(
+          rawText.slice(separatorIndex + CONFIG_QR_SEPARATOR.length) || "",
+        ).trim();
+
+        if (!nextDeploymentId) {
+          throw new Error("設定QRに GAS デプロイ ID が含まれていません。");
+        }
+
+        if (!nextPassphrase) {
+          throw new Error("設定QRに passphrase が含まれていません。");
+        }
+
+        return {
+          deploymentId: nextDeploymentId,
+          passphrase: nextPassphrase,
+        };
+      }
+
+      function confirmConfigQrText(text, now = performance.now()) {
+        const normalized = String(text || "").trim();
+        if (!normalized) return "";
+
+        const isExpired =
+          configQrCandidateText &&
+          now - configQrCandidateLastAt > CONFIG_QR_CONFIRM_TIMEOUT_MS;
+
+        if (normalized !== configQrCandidateText || isExpired) {
+          configQrCandidateText = normalized;
+          configQrCandidateCount = 1;
+          configQrCandidateLastAt = now;
+          return "";
+        }
+
+        if (now - configQrCandidateLastAt < CONFIG_QR_CONFIRM_INTERVAL_MS) {
+          return "";
+        }
+
+        configQrCandidateCount += 1;
+        configQrCandidateLastAt = now;
+        if (configQrCandidateCount >= CONFIG_QR_CONFIRM_COUNT) {
+          return normalized;
+        }
+
+        return "";
+      }
+
       async function startCamera() {
         if (!navigator.mediaDevices?.getUserMedia) {
           return false;
@@ -796,6 +890,13 @@
         if ($scanVideo.srcObject) {
           $scanVideo.srcObject = null;
         }
+      }
+
+      function applyConfigQrSettings(payload) {
+        saveSettings(payload.deploymentId, payload.passphrase);
+        clearError();
+        stopLiveScan();
+        closeAuthForm();
       }
 
       function addHistory(kind, message) {
@@ -928,7 +1029,6 @@
           historyItem: addHistory(startsImmediately ? "saving" : "queued", oid),
         };
         scanQueue.push(queueItem);
-        setCurrentOid("");
 
         if (startsImmediately) {
           setScanStatus(`登録しています… ${oid}`);
@@ -1016,11 +1116,19 @@
       }
 
       async function startScanCode() {
+        if (!hasSavedSettings()) {
+          openAuthForm({ focus: false });
+          void startConfigQrSetup();
+          return;
+        }
+
         clearError();
         setScanningUi(true);
+        setScanBarMode("barcode");
         setCurrentOid("");
         setScanStatus("カメラを起動しています…");
         resetLiveScanState();
+        currentScanMode = "barcode";
 
         try {
           await ensureAudioReady();
@@ -1048,16 +1156,47 @@
         $scanFileInput.click();
       }
 
+      async function startConfigQrSetup() {
+        clearError();
+        setScanningUi(true);
+        setScanBarMode("config");
+        setCurrentOid("");
+        setScanStatus("設定QRを読み取っています…");
+        resetConfigQrState();
+        currentScanMode = "config";
+
+        try {
+          const cameraReady = await startCamera();
+          if (!cameraReady) {
+            throw new Error("camera start failed");
+          }
+
+          running = true;
+          show($videoWrap, true);
+          show($scanBar, true);
+          await startConfigQrScan();
+        } catch (error) {
+          console.error(error);
+          stopLiveScan();
+          showError(
+            "設定QRを読み取れませんでした。GAS デプロイ ID と passphrase を手入力してください。",
+          );
+        }
+      }
+
       function stopLiveScan() {
         running = false;
+        currentScanMode = "";
         activeSavingOid = "";
         scanQueue = [];
         scanQueueProcessing = false;
         liveScanSessionId += 1;
         resetLiveScanState();
+        resetConfigQrState();
         stopCamera();
         show($videoWrap, false);
         show($scanBar, false);
+        setScanBarMode("");
         setScanningUi(false);
         setCurrentOid("");
         setScanStatus("停止しました");
@@ -1072,6 +1211,17 @@
         }
         const formats = await window.BarcodeDetector.getSupportedFormats();
         return Array.isArray(formats) && formats.includes("code_39");
+      }
+
+      async function supportsBarcodeDetectorQrCode() {
+        if (!("BarcodeDetector" in window)) {
+          return false;
+        }
+        if (typeof window.BarcodeDetector.getSupportedFormats !== "function") {
+          return true;
+        }
+        const formats = await window.BarcodeDetector.getSupportedFormats();
+        return Array.isArray(formats) && formats.includes("qr_code");
       }
 
       async function startLiveScan() {
@@ -1138,6 +1288,46 @@
           if (!running) return;
           if (sessionId !== liveScanSessionId) return;
           scheduleLiveScanTick(tick, LIVE_SCAN_CONFIRM_INTERVAL_MS);
+        };
+
+        scheduleLiveScanTick(tick);
+      }
+
+      async function startConfigQrScan() {
+        if (!(await supportsBarcodeDetectorQrCode())) {
+          throw new Error("qr_code detector unavailable");
+        }
+
+        const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+        const sessionId = ++liveScanSessionId;
+        setConfigQrReadyStatus();
+
+        const tick = async () => {
+          if (!running) return;
+          if (currentScanMode !== "config") return;
+          if (sessionId !== liveScanSessionId) return;
+
+          try {
+            const codes = await detector.detect($scanVideo);
+            const code = codes?.[0]?.rawValue || "";
+            if (code) {
+              const confirmedText = confirmConfigQrText(code);
+              if (confirmedText) {
+                const payload = parseConfigQrPayload(confirmedText);
+                applyConfigQrSettings(payload);
+                return;
+              }
+            } else {
+              setConfigQrReadyStatus();
+            }
+          } catch (error) {
+            console.error(error);
+          }
+
+          if (!running) return;
+          if (currentScanMode !== "config") return;
+          if (sessionId !== liveScanSessionId) return;
+          scheduleLiveScanTick(tick, CONFIG_QR_CONFIRM_INTERVAL_MS);
         };
 
         scheduleLiveScanTick(tick);
@@ -1277,6 +1467,7 @@
         }
         clearError();
         saveSettings(nextDeploymentId, nextPassphrase);
+        stopLiveScan();
         closeAuthForm();
       });
 
@@ -1286,7 +1477,8 @@
         localStorage.removeItem(DEPLOYMENT_ID_STORAGE_KEY);
         localStorage.removeItem(LEGACY_API_URL_STORAGE_KEY);
         localStorage.removeItem(PASSPHRASE_STORAGE_KEY);
-        openAuthForm();
+        openAuthForm({ focus: false });
+        void startConfigQrSetup();
       });
 
       $scanStop.addEventListener("click", () => {
@@ -1327,10 +1519,11 @@
       syncLiveScanZoomUi();
       setScanningUi(false);
       setCurrentOid("");
-      if (deploymentId && passphrase) {
+      if (hasSavedSettings()) {
         closeAuthForm();
       } else {
-        openAuthForm();
+        openAuthForm({ focus: false });
+        void startConfigQrSetup();
       }
     </script>
   </body>
