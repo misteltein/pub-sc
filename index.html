@@ -34,6 +34,7 @@
         display: none !important;
       }
 
+      .setup-heading,
       .topbar,
       .auth-form,
       .code-line,
@@ -96,6 +97,14 @@
       .sub-btn:disabled {
         opacity: 0.6;
         cursor: not-allowed;
+      }
+
+      .setup-heading {
+        margin: 0;
+        text-align: center;
+        font-size: clamp(2rem, 9vw, 3.4rem);
+        line-height: 1.1;
+        font-weight: 900;
       }
 
       .auth-form {
@@ -320,6 +329,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@ericblade/quagga2/dist/quagga.js"></script>
   </head>
   <body>
+    <h1 id="setupHeading" class="setup-heading" hidden>QRでログイン</h1>
+
     <form id="authForm" class="auth-form" hidden>
       <label class="auth-label" for="deploymentIdInput">
         GAS デプロイ ID
@@ -347,7 +358,7 @@
       </div>
     </form>
 
-    <div class="topbar">
+    <div id="topbar" class="topbar">
       <button id="scanStart" class="btn">バーコードを読み込む</button>
       <button id="settingsReset" type="button" class="sub-btn" hidden>
         設定変更
@@ -403,9 +414,11 @@
       const LEGACY_API_URL_STORAGE_KEY = "fk-shipping-confirmation.apiUrl";
       const PASSPHRASE_STORAGE_KEY = "fk-shipping-confirmation.passphrase";
 
+      const $setupHeading = document.getElementById("setupHeading");
       const $authForm = document.getElementById("authForm");
       const $deploymentIdInput = document.getElementById("deploymentIdInput");
       const $passphraseInput = document.getElementById("passphraseInput");
+      const $topbar = document.getElementById("topbar");
       const $scanStart = document.getElementById("scanStart");
       const $settingsReset = document.getElementById("settingsReset");
       const $scanFileInput = document.getElementById("scanFileInput");
@@ -555,6 +568,8 @@
 
       function openAuthForm({ focus = true } = {}) {
         stopLiveScan();
+        setHidden($setupHeading, true);
+        setHidden($topbar, false);
         setHidden($authForm, false);
         setHidden($settingsReset, true);
         $deploymentIdInput.value = deploymentId;
@@ -568,7 +583,7 @@
 
       function closeAuthForm() {
         setHidden($authForm, true);
-        setHidden($settingsReset, false);
+        syncSettingsUi();
       }
 
       function saveSettings(nextDeploymentId, nextPassphrase) {
@@ -577,6 +592,14 @@
         localStorage.setItem(DEPLOYMENT_ID_STORAGE_KEY, deploymentId);
         localStorage.removeItem(LEGACY_API_URL_STORAGE_KEY);
         localStorage.setItem(PASSPHRASE_STORAGE_KEY, passphrase);
+      }
+
+      function syncSettingsUi() {
+        const needsQrLogin = !hasSavedSettings();
+        setHidden($setupHeading, !needsQrLogin);
+        setHidden($topbar, needsQrLogin);
+        setHidden($authForm, true);
+        setHidden($settingsReset, needsQrLogin);
       }
 
       function setScanningUi(scanning) {
@@ -940,6 +963,11 @@
 
       function setCurrentOid(oid) {
         if (!oid) {
+          if (!hasSavedSettings()) {
+            $codeHeading.textContent = "";
+            setHidden($codeLine, true);
+            return;
+          }
           $codeHeading.textContent = "WAITING";
           setHidden($codeLine, false);
           return;
@@ -1117,7 +1145,7 @@
 
       async function startScanCode() {
         if (!hasSavedSettings()) {
-          openAuthForm({ focus: false });
+          syncSettingsUi();
           void startConfigQrSetup();
           return;
         }
@@ -1158,6 +1186,7 @@
 
       async function startConfigQrSetup() {
         clearError();
+        syncSettingsUi();
         setScanningUi(true);
         setScanBarMode("config");
         setCurrentOid("");
@@ -1173,13 +1202,13 @@
 
           running = true;
           show($videoWrap, true);
-          show($scanBar, true);
+          show($scanBar, false);
           await startConfigQrScan();
         } catch (error) {
           console.error(error);
           stopLiveScan();
           showError(
-            "設定QRを読み取れませんでした。GAS デプロイ ID と passphrase を手入力してください。",
+            "設定QRを読み取れませんでした。カメラ権限と対応ブラウザを確認してください。",
           );
         }
       }
@@ -1477,7 +1506,7 @@
         localStorage.removeItem(DEPLOYMENT_ID_STORAGE_KEY);
         localStorage.removeItem(LEGACY_API_URL_STORAGE_KEY);
         localStorage.removeItem(PASSPHRASE_STORAGE_KEY);
-        openAuthForm({ focus: false });
+        syncSettingsUi();
         void startConfigQrSetup();
       });
 
@@ -1518,11 +1547,9 @@
       loadSettings();
       syncLiveScanZoomUi();
       setScanningUi(false);
+      syncSettingsUi();
       setCurrentOid("");
-      if (hasSavedSettings()) {
-        closeAuthForm();
-      } else {
-        openAuthForm({ focus: false });
+      if (!hasSavedSettings()) {
         void startConfigQrSetup();
       }
     </script>
