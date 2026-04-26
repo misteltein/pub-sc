@@ -260,6 +260,7 @@
       }
 
       .history li {
+        position: relative;
         border: 1px solid var(--history-border, #e5e7eb);
         border-left: 8px solid var(--history-accent, #94a3b8);
         border-radius: 12px;
@@ -268,20 +269,76 @@
       }
 
       .history-meta {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
+        position: absolute;
+        top: 12px;
+        right: 14px;
         color: #64748b;
-        font-size: 0.85rem;
-        margin-bottom: 6px;
+      }
+
+      .history-time {
+        display: block;
+        font-size: 0.88rem;
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      .history-main {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+        padding-right: 5.6rem;
+      }
+
+      .history-icon {
+        flex: 0 0 auto;
+        width: 2.3rem;
+        height: 2.3rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        font-size: 1.95rem;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .history-icon[data-kind="saving"],
+      .history-icon[data-kind="queued"] {
+        border: 0.26rem solid rgba(148, 163, 184, 0.28);
+        border-top-color: currentColor;
+        border-radius: 50%;
+        animation: history-spin 0.8s linear infinite;
       }
 
       .history-body {
         color: #0f172a;
-        font-size: clamp(1.8rem, 8vw, 3rem);
-        font-weight: 700;
-        line-height: 1.15;
+        min-width: 0;
+        font-size: clamp(2.1rem, 8.8vw, 3.45rem);
+        font-weight: 800;
+        line-height: 1.1;
         word-break: break-word;
+      }
+
+      @media (max-width: 420px) {
+        .history-main {
+          padding-right: 5rem;
+        }
+      }
+
+      .history-icon[data-kind="saved"]::before,
+      .history-icon[data-kind="skipped"]::before {
+        content: "✓";
+      }
+
+      .history-icon[data-kind="error"]::before {
+        content: "☠";
+      }
+
+      .history li[data-kind="queued"] .history-icon {
+        color: #2563eb;
+        border-color: rgba(37, 99, 235, 0.22);
+        border-top-color: #2563eb;
       }
 
       .history li[data-kind="error"] {
@@ -306,6 +363,30 @@
         border-color: #cbd5e1;
         border-left-color: #64748b;
         background: #f8fafc;
+      }
+
+      .history li[data-kind="saving"] .history-icon {
+        color: #d97706;
+        border-color: rgba(245, 158, 11, 0.24);
+        border-top-color: #d97706;
+      }
+
+      .history li[data-kind="saved"] .history-icon {
+        color: #15803d;
+      }
+
+      .history li[data-kind="skipped"] .history-icon {
+        color: #475569;
+      }
+
+      .history li[data-kind="error"] .history-icon {
+        color: #b91c1c;
+      }
+
+      @keyframes history-spin {
+        to {
+          transform: rotate(360deg);
+        }
       }
 
       .error-box {
@@ -470,13 +551,6 @@
       const CONFIG_QR_SEPARATOR = ";";
       const SAVE_MAX_ATTEMPTS = 3;
       const SAVE_RETRY_DELAY_MS = 1000;
-      const HISTORY_KIND_LABELS = {
-        queued: "WAITING",
-        saving: "SAVING",
-        saved: "SAVED",
-        skipped: "SKIPPED",
-        error: "ERROR",
-      };
       const HISTORY_COLOR_PALETTE = [
         { bg: "#eff6ff", border: "#bfdbfe", accent: "#2563eb" },
         { bg: "#f0fdf4", border: "#bbf7d0", accent: "#16a34a" },
@@ -546,6 +620,11 @@
         if (kind === "saving" || kind === "queued" || kind === "error") return;
         if (item.dataset.hasHistoryColor === "true") return;
         applyHistoryColor(item);
+      }
+
+      function setHistoryIconKind(icon, kind) {
+        if (!icon) return;
+        icon.dataset.kind = kind;
       }
 
       function normalizeDeploymentId(value) {
@@ -930,19 +1009,25 @@
         const meta = document.createElement("div");
         meta.className = "history-meta";
 
-        const kindLabel = document.createElement("span");
-        kindLabel.className = "history-kind";
-        kindLabel.textContent = HISTORY_KIND_LABELS[kind] || kind.toUpperCase();
-
         const timeLabel = document.createElement("span");
+        timeLabel.className = "history-time";
         timeLabel.textContent = new Date().toLocaleTimeString("ja-JP");
-        meta.append(kindLabel, timeLabel);
+        meta.append(timeLabel);
+
+        const main = document.createElement("div");
+        main.className = "history-main";
+
+        const icon = document.createElement("span");
+        icon.className = "history-icon";
+        icon.setAttribute("aria-hidden", "true");
+        setHistoryIconKind(icon, kind);
 
         const body = document.createElement("div");
         body.className = "history-body";
         body.textContent = message;
 
-        item.append(meta, body);
+        main.append(icon, body);
+        item.append(meta, main);
         $history.prepend(item);
         return item;
       }
@@ -951,11 +1036,9 @@
         if (!item) return;
         item.dataset.kind = kind;
         ensureHistoryColor(item, kind);
-        const kindLabel = item.querySelector(".history-kind");
+        const icon = item.querySelector(".history-icon");
         const body = item.querySelector(".history-body");
-        if (kindLabel) {
-          kindLabel.textContent = HISTORY_KIND_LABELS[kind] || kind.toUpperCase();
-        }
+        setHistoryIconKind(icon, kind);
         if (body) {
           body.textContent = message;
         }
