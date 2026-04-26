@@ -491,9 +491,10 @@
       let configQrCandidateLastAt = 0;
       let liveScanViewZoom = 1;
       let lastAcceptedOid = "";
-      let activeSavingOid = "";
+      let activeSavingOids = new Set();
       let scanQueue = [];
       let scanQueueProcessing = false;
+      let saveBatchStartTimerId = null;
       let audioContext = null;
       let deploymentId = "";
       let passphrase = "";
@@ -511,6 +512,7 @@
       const CONFIG_QR_CONFIRM_COUNT = 2;
       const CONFIG_QR_CONFIRM_TIMEOUT_MS = 1500;
       const CONFIG_QR_SEPARATOR = ";";
+      const SAVE_BATCH_START_DELAY_MS = 1000;
       const SAVE_MAX_ATTEMPTS = 3;
       const SAVE_RETRY_DELAY_MS = 1000;
       const HISTORY_COLOR_PALETTE = [
@@ -1063,6 +1065,33 @@
         return JSON.parse(text);
       }
 
+      async function callBatchScanApi(oids) {
+        if (!deploymentId) {
+          throw new Error("GAS デプロイ ID が未設定です。");
+        }
+        if (!passphrase) {
+          throw new Error("passphrase が未設定です。");
+        }
+
+        const payload = new URLSearchParams({
+          action: "scan_batch",
+          passphrase,
+          oids: JSON.stringify(oids),
+        });
+
+        const response = await fetch(buildApiUrl(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          },
+          body: payload.toString(),
+          redirect: "follow",
+        });
+
+        const text = await response.text();
+        return JSON.parse(text);
+      }
+
       function getQueueSuffix() {
         return scanQueue.length ? `（待ち ${scanQueue.length} 件）` : "";
       }
@@ -1071,8 +1100,27 @@
         return scanQueue.some((item) => item.oid === oid);
       }
 
+      function hasActiveSavingOid(oid) {
+        return activeSavingOids.has(oid);
+      }
+
       function isProcessingOrQueued(oid) {
-        return oid === activeSavingOid || hasQueuedOid(oid);
+        return hasActiveSavingOid(oid) || hasQueuedOid(oid);
+      }
+
+      function clearSaveBatchStartTimer() {
+        if (!saveBatchStartTimerId) return;
+        clearTimeout(saveBatchStartTimerId);
+        saveBatchStartTimerId = null;
+      }
+
+      function scheduleSaveBatchStart() {
+        if (scanQueueProcessing || saveBatchStartTimerId || !scanQueue.length) return;
+        saveBatchStartTimerId = window.setTimeout(() => {
+          saveBatchStartTimerId = null;
+          if (scanQueueProcessing || !scanQueue.length) return;
+          void processScanQueue();
+        }, SAVE_BATCH_START_DELAY_MS);
       }
 
       function onCodeDetected(code) {
@@ -1087,80 +1135,95 @@
 
         setCurrentOid(oid);
         clearError();
-        const startsImmediately = !scanQueueProcessing && !activeSavingOid;
         const queueItem = {
           oid,
-          historyItem: addHistory(startsImmediately ? "saving" : "queued", oid),
+          historyItem: addHistory("queued", oid),
         };
         scanQueue.push(queueItem);
         void playBeep();
-
-        if (startsImmediately) {
-          setScanStatus(`登録しています… ${oid}`);
-        } else {
-          setScanStatus(`キューに追加しました: ${oid}${getQueueSuffix()}`);
-        }
-
-        void processScanQueue();
+        setScanStatus(`キューに追加しました: ${oid}${getQueueSuffix()}`);
+        scheduleSaveBatchStart();
       }
 
       async function processScanQueue() {
         if (scanQueueProcessing) return;
+        if (!scanQueue.length) return;
+        clearSaveBatchStartTimer();
         scanQueueProcessing = true;
         try {
           while (scanQueue.length) {
-            const item = scanQueue.shift();
-            await saveQueuedOid(item);
+            const batchItems = scanQueue.splice(0, scanQueue.length);
+            batchItems.forEach(({ oid, historyItem }) => {
+              activeSavingOids.add(oid);
+              updateHistoryItem(historyItem, "saving", oid);
+            });
+            await saveQueuedBatch(batchItems);
+            batchItems.forEach(({ oid }) => {
+              activeSavingOids.delete(oid);
+            });
           }
         } finally {
           scanQueueProcessing = false;
-          activeSavingOid = "";
+          activeSavingOids = new Set();
+          if (scanQueue.length) {
+            void processScanQueue();
+          }
         }
       }
 
-      async function saveQueuedOid(item) {
-        const { oid, historyItem } = item;
-        activeSavingOid = oid;
+      function applyBatchScanResults(batchItems, results) {
+        if (!Array.isArray(results) || results.length !== batchItems.length) {
+          throw new Error("unexpected scan_batch response");
+        }
+
+        results.forEach((result, index) => {
+          const item = batchItems[index];
+          const resultOid = normalizeDisplayCode(result && result.oid);
+          if (!item || resultOid !== item.oid) {
+            throw new Error("scan_batch result order mismatch");
+          }
+
+          lastAcceptedOid = item.oid;
+          if (result.skipped) {
+            updateHistoryItem(item.historyItem, "skipped", item.oid);
+            return;
+          }
+
+          if (result.saved === true) {
+            updateHistoryItem(item.historyItem, "saved", item.oid);
+            return;
+          }
+
+          throw new Error(`unexpected scan_batch item: ${JSON.stringify(result).slice(0, 200)}`);
+        });
+      }
+
+      async function saveQueuedBatch(batchItems) {
+        const oids = batchItems.map((item) => item.oid);
         clearError();
 
         try {
           let lastError = null;
           for (let attempt = 1; attempt <= SAVE_MAX_ATTEMPTS; attempt += 1) {
-            updateHistoryItem(historyItem, "saving", oid);
-            setScanStatus(`登録しています… ${oid}${getQueueSuffix()}`);
+            batchItems.forEach(({ oid, historyItem }) => {
+              updateHistoryItem(historyItem, "saving", oid);
+            });
+            setScanStatus(`まとめて登録しています… ${oids.length}件${getQueueSuffix()}`);
 
             try {
-              const response = await callApi("scan", { oid });
+              const response = await callBatchScanApi(oids);
               if (!response.ok) {
                 throw new Error(response.message || "API error");
               }
-
-              if (response.skipped) {
-                lastAcceptedOid = oid;
-                setScanStatus(`サーバー側で重複スキップしました: ${oid}`);
-                updateHistoryItem(historyItem, "skipped", oid);
-                return;
-              }
-
-              if (response.saved !== true) {
-                throw new Error(
-                  `unexpected scan response: ${JSON.stringify(response).slice(0, 200)}`,
-                );
-              }
-
-              lastAcceptedOid = oid;
-              setScanStatus(`登録しました: ${oid}`);
-              updateHistoryItem(historyItem, "saved", oid);
+              applyBatchScanResults(batchItems, response.results);
+              setScanStatus(`登録しました: ${oids.length}件`);
               return;
             } catch (error) {
               lastError = error;
               if (attempt >= SAVE_MAX_ATTEMPTS) {
                 break;
               }
-              setScanStatus(
-                `登録に失敗しました。再試行します… ${oid}`,
-              );
-              updateHistoryItem(historyItem, "saving", oid);
+              setScanStatus(`登録に失敗しました。再試行します… ${oids.length}件`);
               await wait(SAVE_RETRY_DELAY_MS);
             }
           }
@@ -1168,14 +1231,14 @@
           throw lastError || new Error("API error");
         } catch (error) {
           showError(error.message || String(error));
-          setScanStatus(`登録に失敗しました: ${oid}`);
-          if (historyItem) {
-            updateHistoryItem(historyItem, "error", oid);
-          } else {
+          setScanStatus(`登録に失敗しました: ${oids.length}件`);
+          batchItems.forEach(({ oid, historyItem }) => {
+            if (historyItem) {
+              updateHistoryItem(historyItem, "error", oid);
+              return;
+            }
             addHistory("error", oid);
-          }
-        } finally {
-          activeSavingOid = "";
+          });
         }
       }
 
@@ -1252,9 +1315,10 @@
       function stopLiveScan() {
         running = false;
         currentScanMode = "";
-        activeSavingOid = "";
+        activeSavingOids = new Set();
         scanQueue = [];
         scanQueueProcessing = false;
+        clearSaveBatchStartTimer();
         liveScanSessionId += 1;
         resetLiveScanState();
         resetConfigQrState();
