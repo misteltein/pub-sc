@@ -464,6 +464,7 @@
       const SAVE_BATCH_START_DELAY_MS = 1000;
       const SAVE_MAX_ATTEMPTS = 3;
       const SAVE_RETRY_DELAY_MS = 1000;
+      const SCANNED_OID_PATTERN = /^\d{4}-\d{3}$/;
       const HISTORY_COLOR_PALETTE = [
         { bg: "#eff6ff", border: "#bfdbfe", accent: "#2563eb" },
         { bg: "#f0fdf4", border: "#bbf7d0", accent: "#16a34a" },
@@ -1075,8 +1076,8 @@
       }
 
       function onCodeDetected(code) {
-        const oid = normalizeDisplayCode(code);
-        if (!oid) {
+        const oid = String(code || "").trim();
+        if (!SCANNED_OID_PATTERN.test(oid)) {
           return;
         }
 
