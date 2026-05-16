@@ -973,17 +973,46 @@
         if (!audioContext) return;
 
         const now = audioContext.currentTime;
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(1046.5, now);
-        gainNode.gain.setValueAtTime(0.0001, now);
-        gainNode.gain.exponentialRampToValueAtTime(0.18, now + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        oscillator.start(now);
-        oscillator.stop(now + 0.14);
+        const noiseDuration = 0.14;
+        const noiseBuffer = audioContext.createBuffer(
+          1,
+          Math.floor(audioContext.sampleRate * noiseDuration),
+          audioContext.sampleRate,
+        );
+        const noiseData = noiseBuffer.getChannelData(0);
+
+        for (let i = 0; i < noiseData.length; i += 1) {
+          noiseData[i] = Math.random() * 2 - 1;
+        }
+
+        const noise = audioContext.createBufferSource();
+        const highpass = audioContext.createBiquadFilter();
+        const noiseGain = audioContext.createGain();
+
+        noise.buffer = noiseBuffer;
+        highpass.type = "highpass";
+        highpass.frequency.setValueAtTime(900, now);
+        noiseGain.gain.setValueAtTime(0.0001, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.42, now + 0.006);
+        noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDuration);
+        noise.connect(highpass);
+        highpass.connect(noiseGain);
+        noiseGain.connect(audioContext.destination);
+        noise.start(now);
+        noise.stop(now + noiseDuration);
+
+        const body = audioContext.createOscillator();
+        const bodyGain = audioContext.createGain();
+        body.type = "triangle";
+        body.frequency.setValueAtTime(185, now);
+        body.frequency.exponentialRampToValueAtTime(120, now + 0.09);
+        bodyGain.gain.setValueAtTime(0.0001, now);
+        bodyGain.gain.exponentialRampToValueAtTime(0.2, now + 0.005);
+        bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.11);
+        body.connect(bodyGain);
+        bodyGain.connect(audioContext.destination);
+        body.start(now);
+        body.stop(now + 0.12);
       }
 
       async function callApi(action, params = {}) {
